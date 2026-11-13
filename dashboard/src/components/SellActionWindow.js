@@ -1,0 +1,250 @@
+import React, { useState, useContext, useEffect } from "react";
+import { createPortal } from "react-dom";
+import api from "../utils/axios";
+
+import GeneralContext from "./GeneralContext";
+import Modal from "./Modal";
+import { watchlist } from "../data/data";
+import "./BuyActionWindow.css";
+
+const SellActionWindow = ({ uid }) => {
+  const [stockQuantity, setStockQuantity] = useState(1);
+  const [stockPrice, setStockPrice] = useState(0.0);
+  const [modal, setModal] = useState({ isOpen: false, type: 'success', title: '', message: '' });
+
+  const [holdings, setHoldings] = useState([]);
+  const { closeSellWindow } = useContext(GeneralContext);
+
+  useEffect(() => {
+    const fetchHoldings = async () => {
+      try {
+        // Get holdings for current user
+        const res = await api.get("/allHoldings");
+        setHoldings(res.data);
+      } catch (err) {
+        console.error("Failed to fetch holdings", err);
+      }
+    };
+
+    fetchHoldings();
+
+    // Auto-populate price from watchlist
+    const stock = watchlist.find((s) => s.name === uid);
+    if (stock) {
+      setStockPrice(stock.price);
+    }
+  }, [uid]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        closeSellWindow();
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeSellWindow]);
+
+  const stock = holdings.find(item => item.name === uid);
+  const availableQty = stock ? stock.qty : 0;
+
+  const formatCurrency = (value) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 2,
+    }).format(value || 0);
+
+  const handleSellClick = async () => {
+    if (stockQuantity <= 0 || stockPrice <= 0) {
+      setModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Invalid Input',
+        message: 'Please enter valid quantity and price.'
+      });
+      return;
+    }
+
+    if (stockQuantity > availableQty) {
+      setModal({
+        isOpen: true,
+        type: 'warning',
+        title: 'Insufficient Quantity',
+        message: `You only have ${availableQty} shares available to sell.`
+      });
+      return;
+    }
+
+    try {
+      await api.post("/newOrder", {
+        name: uid,
+        qty: stockQuantity,
+        price: stockPrice,
+        mode: "SELL",
+      });
+
+      setModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Paper order recorded',
+        message: 'The simulated sell order was recorded in your demo account. It was not sent to a broker or exchange.'
+      });
+      
+      // Close window and reload after modal is acknowledged
+      setTimeout(() => {
+        closeSellWindow();
+        window.location.reload();
+      }, 1500);
+    } catch (error) {
+      console.error("Order failed:", error);
+      const errorMessage = error.response?.data?.message || "Failed to place order. Please try again.";
+      setModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Order Failed',
+        message: errorMessage
+      });
+    }
+  };
+
+  const handleModalClose = () => {
+    setModal({ ...modal, isOpen: false });
+  };
+
+  const handleCancelClick = () => {
+    closeSellWindow();
+  };
+
+  return createPortal(
+    <>
+      <Modal 
+        isOpen={modal.isOpen}
+        onClose={handleModalClose}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+      />
+      <div className="trade-window-overlay" onClick={handleCancelClick}>
+        <div
+          className="trade-window trade-window-sell"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="trade-window-header">
+            <div>
+              <p className="trade-window-kicker">Paper order</p>
+              <h2 className="trade-window-title">Sell {uid}</h2>
+              <p className="trade-window-subtitle">
+                Review the simulated order details. This does not send a trade
+                to a broker or exchange.
+              </p>
+            </div>
+            <button
+              className="trade-window-close"
+              onClick={handleCancelClick}
+              aria-label="Close sell window"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="trade-window-body">
+            <section className="trade-window-panel">
+              <div className="trade-stat-grid">
+                <article className="trade-stat-card">
+                  <p>Instrument</p>
+                  <h3>{uid}</h3>
+                </article>
+                <article className="trade-stat-card">
+                  <p>Available quantity</p>
+                  <h3>{availableQty}</h3>
+                </article>
+                <article className="trade-stat-card danger">
+                  <p>Estimated proceeds</p>
+                  <h3>{formatCurrency(stockQuantity * stockPrice)}</h3>
+                </article>
+              </div>
+
+              <div className="trade-form-grid">
+                <div className="form-group">
+                  <label htmlFor="sellQty">Quantity</label>
+                  <input
+                    type="number"
+                    id="sellQty"
+                    min="1"
+                    value={stockQuantity}
+                    onChange={(e) => setStockQuantity(Number(e.target.value))}
+                    className="input-field"
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="sellPrice">Price (₹)</label>
+                  <input
+                    type="number"
+                    id="sellPrice"
+                    step="0.05"
+                    min="0"
+                    value={stockPrice}
+                    onChange={(e) => setStockPrice(Number(e.target.value))}
+                    className="input-field"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <aside className="trade-window-summary">
+              <p className="trade-window-kicker">Order summary</p>
+              <div className="trade-summary-list">
+                <div>
+                  <span>Order type</span>
+                  <strong>Simulated sell</strong>
+                </div>
+                <div>
+                  <span>Available qty</span>
+                  <strong>{availableQty}</strong>
+                </div>
+                <div>
+                  <span>Requested qty</span>
+                  <strong>{stockQuantity}</strong>
+                </div>
+                <div>
+                  <span>Estimated proceeds</span>
+                  <strong>{formatCurrency(stockQuantity * stockPrice)}</strong>
+                </div>
+              </div>
+            </aside>
+          </div>
+
+          <div className="trade-window-footer">
+            <span className="margin-info">
+              Estimated proceeds {formatCurrency(stockQuantity * stockPrice)}
+            </span>
+            <div className="btn-group">
+              <button className="trade-btn trade-btn-secondary" onClick={handleCancelClick}>
+                Cancel
+              </button>
+              <button
+                className="trade-btn trade-btn-danger"
+                onClick={handleSellClick}
+                disabled={availableQty === 0}
+              >
+                Record paper sell
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>,
+    document.body
+  );
+};
+
+export default SellActionWindow;

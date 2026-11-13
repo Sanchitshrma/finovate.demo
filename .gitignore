@@ -1,0 +1,25 @@
+# Dependencies
+**/node_modules/
+
+# Local environment files. Keep only the safe templates in version control.
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Generated build and test output
+**/build/
+**/coverage/
+**/.vercel/
+
+# Logs and operating-system files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
